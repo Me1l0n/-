@@ -8,7 +8,7 @@ internal static class Program
     private const string DefaultHost = "127.0.0.1";
     private const int DefaultPort = 5000;
 
-    private static void Main(string[] args)
+    private static async Task Main(string[] args)
     {
         var utf8NoBom = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false);
         Console.InputEncoding = utf8NoBom;
@@ -23,17 +23,20 @@ internal static class Program
             port = DefaultPort;
         }
 
+        string clientName = args.Length > 2 ? args[2] : "Клиент";
+
         Console.WriteLine("==================================================");
-        Console.WriteLine("             СИНХРОННЫЙ TCP ECHO-КЛИЕНТ           ");
+        Console.WriteLine($"      АСИНХРОННЫЙ TCP ECHO-КЛИЕНТ ({clientName})   ");
         Console.WriteLine("==================================================");
         Console.WriteLine($"[Клиент] Подключение к серверу {host}:{port}...");
 
+        using var client = new TcpClient();
+
         try
         {
-            // Синхронное подключение к серверу
-            using var client = new TcpClient();
-            client.Connect(host, port);
-            Console.WriteLine("[Клиент] Подключение установлено.");
+            // Асинхронное подключение к серверу
+            await client.ConnectAsync(host, port);
+            Console.WriteLine("[Клиент] Подключение успешно установлено.");
             Console.WriteLine("[Клиент] Вводите строки для отправки. Для выхода введите 'exit'.\n");
 
             using NetworkStream stream = client.GetStream();
@@ -42,7 +45,7 @@ internal static class Program
 
             while (true)
             {
-                Console.Write("Введите строку > ");
+                Console.Write($"{clientName} > ");
                 string? input = Console.ReadLine();
 
                 if (input is null || input.Equals("exit", StringComparison.OrdinalIgnoreCase))
@@ -51,11 +54,16 @@ internal static class Program
                     break;
                 }
 
-                // Синхронная отправка строки серверу
-                writer.WriteLine(input);
+                if (string.IsNullOrWhiteSpace(input))
+                {
+                    continue;
+                }
 
-                // Блокирующее ожидание ответа от сервера
-                string? response = reader.ReadLine();
+                // Асинхронная отправка строки
+                await writer.WriteLineAsync(input);
+
+                // Асинхронное ожидание ответа от сервера
+                string? response = await reader.ReadLineAsync();
                 if (response is null)
                 {
                     Console.WriteLine("[Клиент] Сервер закрыл соединение.");
@@ -67,12 +75,16 @@ internal static class Program
         }
         catch (SocketException ex)
         {
-            Console.WriteLine($"[Ошибка подключения] Не удалось подключиться к {host}:{port}: {ex.Message}");
-            Console.WriteLine("Убедитесь, что сервер запущен и слушает указанный порт.");
+            Console.WriteLine($"[Ошибка подключения] Не удалось связаться с сервером {host}:{port}: {ex.Message}");
+            Console.WriteLine("Убедитесь, что сервер запущен и доступен по указанному адресу.");
         }
         catch (IOException ex)
         {
             Console.WriteLine($"[Ошибка обмена данными] Соединение с сервером потеряно: {ex.Message}");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[Непредвиденная ошибка] {ex.Message}");
         }
 
         Console.WriteLine("[Клиент] Работа завершена.");
